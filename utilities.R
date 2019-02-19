@@ -1,173 +1,175 @@
-# Implement bedtools in R.
-# Inputs: The two bed files and all options.
-# Outputs: The resulting intersection file.
-bedTools.2in <- function(functionstring="bedtools intersect", bed1, bed2, opt.string="") {
+# Implement bedtools intersect command in R.
+# Notes: Set 'num.cols' equal to the # of expected columns in the output file.
+#
+bedTools.2in <- function(functionstring="bedtools intersect", bed1, bed2, opt.string="", num.cols=NULL) {
   
-  # Create temp files.
-  a.file = tempfile()
-  b.file = tempfile()
-  out.file = tempfile()
+  # Create temporary files for use with bedtools intersect.
+  a.file <- tempfile()
+  b.file <- tempfile()
+  out.file <- tempfile()
   
-  # Write BED data to temp files.
-  write.table(bed1, file=a.file, quote=F, sep="\t", col.names=F, row.names=F)
-  write.table(bed2, file=b.file, quote=F, sep="\t", col.names=F, row.names=F)
+  # Write BED input data to temporary files.
+  write.table(bed1, file=a.file, sep="\t", row.names=F, col.names=F, quote=F)
+  write.table(bed2, file=b.file, sep="\t", row.names=F, col.names=F, quote=F)
   
-  # Create and run bedtools command.
-  command = paste(functionstring, "-a", a.file, "-b", b.file, opt.string, ">", out.file, sep=" ")
+  # Run bedtools intersect command.
+  command <- paste(functionstring, "-a", a.file, "-b", b.file, opt.string, ">", out.file, sep=" ")
   try(system(command))
   
-  # Read in resulting table.
-  result = read.table(out.file, header=F, sep="\t")
+  # Read in output.
+  if (!is.null(num.cols)) {
+    result <- read.table(out.file, header=F, sep="\t", stringsAsFactors=F, col.names=paste0("V", 1:num.cols))
+  } else {
+    result <- read.table(out.file, header=F, sep="\t", stringsAsFactors=F)
+  }
+  
+  # Clean up temporary files.
   unlink(a.file)
   unlink(b.file)
   unlink(out.file)
   
-  # Return results.
+  # Return intersection results.
   return(result)
   
 }
 
-# Sorts BED file according to lexographical order.
-# Inputs:
-# Outputs:
+# Sort BED intervals according to lexographical order.
+# Notes:
+#
 sortBed <- function(bed) {
   
-  # Define chromosome order.
+  # Define order of chromosomes.
   chrs <- paste0("chr", c(1:22, "X", "Y"))
   
-  #
+  # Compile sorted BED intervals chromosome by chromosome.
   sorted.bed <- c()
   for (chr in chrs) {
     
-    #
+    # Sort by start coordinate.
     subset.bed <- bed[bed[, 1] == chr, ]
-    sorted.bed <- rbind(sorted.bed, subset.bed[order(subset.bed[, 2]), ])
+    sorted.bed <- rbind(sorted.bed, subset.bed[order(subset.bed[, 2], subset.bed[, 3]), ])
     
   }
   
-  #
+  # Return sorted BED intervals.
   return(sorted.bed)
   
 }
 
+# Sort interactions according to lexographical order of the lhs bin first, then the rhs bin.
+# Notes: Assumes all interactions are cis.
 #
-# Inputs:
-# Outputs:
-bedTools.2in.compact <- function(functionstring="bedtools intersect", bed1, bed2, opt.string="") {
+sortInteractions <- function(bed) {
   
-  # Create temp files.
-  a.file = tempfile()
-  b.file = tempfile()
-  out.file = tempfile()
+  # Define order of chromosomes.
+  chrs <- paste0("chr", c(1:22, "X", "Y"))
   
-  # Write BED data to temp files.
-  write.table(bed1, file=a.file, quote=F, sep="\t", col.names=F, row.names=F)
-  write.table(bed2, file=b.file, quote=F, sep="\t", col.names=F, row.names=F)
+  # Compile sorted BED intervals chromosome by chromosome.
+  sorted.bed <- c()
+  for (chr in chrs) {
+    
+    # Sort by start coordinate.
+    subset.bed <- bed[bed[, 1] == chr, ]
+    sorted.bed <- rbind(sorted.bed, subset.bed[order(subset.bed[, 2], subset.bed[, 3], subset.bed[, 6], subset.bed[, 7]), ])
+    
+  }
   
-  # Create and run bedtools command.
-  command = paste(functionstring, "-a", a.file, "-b", b.file, opt.string, ">", out.file, sep=" ")
-  try(system(command))
-  
-  # Read in resulting table.
-  result = read.table(out.file, header=F, sep="\t", col.names=paste0("V", 1:8))
-  unlink(a.file)
-  unlink(b.file)
-  unlink(out.file)
-  
-  # Return results.
-  return(result)
+  # Return sorted BED intervals.
+  return(sorted.bed)
   
 }
 
-# Given two sets of interactions, checks how many interactions overlap between the two sets.
-# Inputs:
-# Outputs:
-checkInteractionOverlap <- function(interaction.set.1, interaction.set.2) {
-  
-  #
-  loci1 <- unique(interaction.set.1[, c(1:3, 5:7)])
-  loci2 <- unique(interaction.set.2[, c(1:3, 5:7)])
-  combined.loci <- rbind(loci1, loci2)
-  unique.loci <- unique(combined.loci)
-  
-  #
-  print(paste0("Interaction set 1 has ", length(loci1[, 1]), " unique interaction loci."))
-  print(paste0("Interaction set 2 has ", length(loci2[, 1]), " unique interaction loci."))
-  print(paste0("The two interaction sets have ", length(unique.loci[, 1]), " total unique loci."))
-  print(paste0("The two interaction sets have ", (length(loci1[, 1]) + length(loci2[, 1]) - length(unique.loci[, 1])), " common loci."))
-  print(paste0("Interaction set 1 has ", (-length(loci2[, 1]) + length(unique.loci[, 1])), " specific loci."))
-  print(paste0("Interaction set 2 has ", (-length(loci1[, 1]) + length(unique.loci[, 1])), " specific loci."))
-  
-}
-
+# Converts interactions to a format compatible with the WashU Epigenome Browser.
+# Notes: Set 'center' to TRUE to plot interaction arcs between the centers of bins.
 #
-# Inputs:
-# Outputs:
-convertToWashUFormat <- function(interactions.con, cell.type, center=F) {
+convertToWashUFormat <- function(interactions, center=T) {
   
-  #
-  field1 <- cbind(interactions.con[[cell.type]]$bait_chr, interactions.con[[cell.type]]$bait_start, interactions.con[[cell.type]]$bait_end)
-  field1_old <- data.frame(field1, stringsAsFactors=F)
-  field1_old[, 1] <- as.character(field1_old[, 1])
-  field1_old[, 2] <- as.numeric(field1_old[, 2])
-  field1_old[, 3] <- as.numeric(field1_old[, 3])
-  for (i in 1:length(field1_old[, 1])) {
-    field1[i, 2] <- floor((field1_old[i, 2] + field1_old[i, 3])/2)
-    field1[i, 3] <- floor((field1_old[i, 2] + field1_old[i, 3])/2) + 1
+  # Process the lhs bin (first field).
+  field1 <- cbind(interactions$bait_chr, interactions$bait_start, interactions$bait_end)
+  field1.old <- data.frame(field1, stringsAsFactors=F)
+  field1.old[, 1] <- as.character(field1.old[, 1])
+  field1.old[, 2] <- as.numeric(field1.old[, 2])
+  field1.old[, 3] <- as.numeric(field1.old[, 3])
+  if (center == T) {
+    for (i in 1:length(field1.old[, 1])) {
+      field1[i, 2] <- floor((field1.old[i, 2] + field1.old[i, 3])/2)
+      field1[i, 3] <- floor((field1.old[i, 2] + field1.old[i, 3])/2) + 1
+    }
   }
   field1[, 2] <- as.character(field1[, 2])
   field1[, 3] <- as.character(field1[, 3])
-  field1_collapsed <- apply(field1, 1, paste0, collapse=",")
+  field1.collapsed <- apply(field1, 1, paste0, collapse=",")
   
-  #
-  field2 <- cbind(interactions.con[[cell.type]]$otherEnd_chr, interactions.con[[cell.type]]$otherEnd_start, interactions.con[[cell.type]]$otherEnd_end)
-  field2_old <- data.frame(field2, stringsAsFactors=F)
-  field2_old[, 1] <- as.character(field2_old[, 1])
-  field2_old[, 2] <- as.numeric(field2_old[, 2])
-  field2_old[, 3] <- as.numeric(field2_old[, 3])
-  for (i in 1:length(field2_old[, 1])) {
-    field2[i, 2] <- floor((field2_old[i, 2] + field2_old[i, 3])/2)
-    field2[i, 3] <- floor((field2_old[i, 2] + field2_old[i, 3])/2) + 1
+  # Process the rhs bin (second field).
+  field2 <- cbind(interactions$otherEnd_chr, interactions$otherEnd_start, interactions$otherEnd_end)
+  field2.old <- data.frame(field2, stringsAsFactors=F)
+  field2.old[, 1] <- as.character(field2.old[, 1])
+  field2.old[, 2] <- as.numeric(field2.old[, 2])
+  field2.old[, 3] <- as.numeric(field2.old[, 3])
+  if (center == T) {
+    for (i in 1:length(field2.old[, 1])) {
+      field2[i, 2] <- floor((field2.old[i, 2] + field2.old[i, 3])/2)
+      field2[i, 3] <- floor((field2.old[i, 2] + field2.old[i, 3])/2) + 1
+    }
   }
   field2[, 2] <- as.character(field2[, 2])
   field2[, 3] <- as.character(field2[, 3])
-  field2_collapsed <- apply(field2, 1, paste0, collapse=",")
+  field2.collapsed <- apply(field2, 1, paste0, collapse=",")
   
-  #
-  field3 <- interactions.con[[cell.type]]$score
+  # Process the interaction score (third field).
+  field3 <- interactions$score
   
-  #
-  return(cbind(field1_collapsed, field2_collapsed, field3))
+  # Stitch together and return formatted interactions.
+  return(cbind(field1.collapsed, field2.collapsed, field3))
   
 }
 
+# Converts interactions from the old WashU format to longrange format.
+# Notes:
 #
-# Inputs:
-# Outputs:
-color.bar <- function(lut, min, max=-min, nticks=11, ticks=seq(min, max, len=nticks), labels, title='') {
+updateWashUFormat <- function(interactions) {
   
-  scale = (length(lut)-1)/(max-min)
-  dev.new(width=1.75, height=5)
-  plot(c(0,10), c(min,max), type='n', bty='n', xaxt='n', xlab='', yaxt='n', ylab='', main=title, cex.main=0.85)
-  axis(2, ticks, labels=labels, las=2)
-  for (i in 1:(length(lut)-1)) {
-    y = (i-1)/scale + min
-    rect(0,y,10,y+1/scale, col=lut[i], border=NA)
+  # Convert each interaction in the old format to two entries in the new format.
+  updated <- c()
+  for (i in 1:length(interactions[, 1])) {
+
+    lhs <- unlist(strsplit(interactions[i, 1], split=","))
+    rhs <- unlist(strsplit(interactions[i, 2], split=","))
+    updated <- rbind(updated, c(lhs, paste0(rhs[1], ":", rhs[2], "-", rhs[3], ",", interactions[i, 3])))
+    updated <- rbind(updated, c(rhs, paste0(lhs[1], ":", lhs[2], "-", lhs[3], ",", interactions[i, 3])))
+    
   }
   
+  # Return the interactions in longrange format.
+  return(updated)
+  
 }
 
-# Filter upper and lower percentile of values to remove outliers.
-# Inputs:
-# Outputs:
-filterDistribution <- function(vector, percent) {
+# Update rsids that have been merged in dbSNP using the RsMergeArch table.
+# Notes:
+#
+update.rsid <- function(rsid, rs.merge) {
   
-  #
-  high_cutoff <- quantile(vector, 1-percent)
-  low_cutoff <- quantile(vector, percent)
+  # Continue looking for rsid translations until no more can be found.
+  repeat {
+    
+    # Translate the rsid using the RsMergeArch table.
+    hit <- rs.merge[rs.merge[, 1] == rsid, 2]
+    
+    # If a hit is found, update the rsid and repeat. Otherwise, break.
+    if (length(hit) == 1) {
+      rsid <- hit
+    } else if (length(hit) == 0) {
+      break
+    }
+    
+  }
   
-  #
-  return(vector[(vector > low_cutoff) & (vector < high_cutoff)])
+  # Return the updated rsid.
+  return(rsid)
   
 }
+
+
+# End ---------------------------------------------------------------------
 
